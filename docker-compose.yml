@@ -1,0 +1,66 @@
+version: "3.7"
+
+networks:
+  traefik:
+
+volumes:
+  mei:
+    driver: local
+    driver_opts:
+      device: $PWD/apache/public_html/files/mei
+      o: bind
+      type: none
+
+services:
+  apache:
+    build: ./apache
+    container_name: apache
+    labels:
+      - "traefik.http.routers.apache.rule=Host(`localhost`)"
+      - "traefik.http.routers.apache.middlewares=testHeader"
+    networks:
+      - traefik
+    restart: always
+    volumes:
+      - ./apache/public_html:/usr/local/apache2/htdocs/
+      - type: volume
+        source: mei
+        target: /usr/local/apache2/htdocs/files/mei/
+  fuseki:
+    build: ./fuseki-docker
+    container_name: fuseki
+    environment:
+      ADMIN_PASSWORD: coin
+      ENABLE_DATA_WRITE: "true"
+      ENABLE_UPDATE: "true"
+      ENABLE_UPLOAD: "true"
+    labels:
+      - "traefik.http.routers.fuseki.rule=(Host(`localhost`) && PathPrefix(`/sparql`))"
+      - "traefik.http.routers.fuseki.middlewares=sparql"
+      - "traefik.http.middlewares.sparql.chain.middlewares=blip,testHeader"
+      - "traefik.http.middlewares.blip.replacepath.path=/iremus/sparql"
+    networks:
+      - traefik
+    ports:
+      - 3030:3030
+    restart: always
+    volumes:
+      - ./fuseki-data:/fuseki-base/databases
+      - ./fuseki-configuration:/fuseki-base/configuration
+  traefik:
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=true"
+      - "--entrypoints.web.address=:80"
+    container_name: traefik
+    image: traefik
+    labels:
+      - "traefik.http.middlewares.testHeader.headers.customresponseheaders.Access-Control-Allow-Origin=*"
+    networks:
+      - traefik
+    ports:
+      - 80:80
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
